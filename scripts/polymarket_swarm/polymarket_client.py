@@ -200,17 +200,19 @@ class PolymarketClient:
         self,
         limit: int = 100,
         min_volume: float = MIN_VOLUME_USD,
-        min_liquidity: float = MIN_LIQUIDITY_USD
+        min_liquidity: float = MIN_LIQUIDITY_USD,
+        exclude_only: bool = True,  # NEW: Only exclude crypto/sports, don't filter by target categories
     ) -> List[Market]:
-        """Fetch markets filtered for our target categories.
+        """Fetch markets with filtering.
 
-        Excludes crypto, sports. Prioritizes politics, economy, tech.
-        Only returns tradeable markets with sufficient volume/liquidity.
+        By default, scans ALL markets except crypto and sports.
+        Set exclude_only=False to also prioritize target categories.
 
         Args:
             limit: Maximum markets to return after filtering
             min_volume: Minimum volume in USD
             min_liquidity: Minimum liquidity in USD
+            exclude_only: If True, only exclude crypto/sports (scan ALL else)
 
         Returns:
             Filtered list of Market objects
@@ -230,7 +232,7 @@ class PolymarketClient:
                 break
 
             for market in markets:
-                # Skip excluded categories
+                # Skip excluded categories (crypto/sports)
                 if self._is_excluded_market(market):
                     continue
 
@@ -255,11 +257,37 @@ class PolymarketClient:
 
             offset += batch_size
 
-            # Safety limit
-            if offset > 1000:
+            # Safety limit - increased to scan more markets
+            if offset > 2000:
                 break
 
         return filtered[:limit]
+
+    def fetch_all_categories(
+        self,
+        limit: int = 200,
+        min_volume: float = 5000.0,  # Lower threshold to catch more
+        min_liquidity: float = 2000.0,
+    ) -> List[Market]:
+        """Fetch ALL tradeable markets except crypto/sports.
+
+        This is the broadest scan - catches everything.
+        Use this for comprehensive market discovery.
+
+        Args:
+            limit: Maximum markets to return
+            min_volume: Minimum volume in USD
+            min_liquidity: Minimum liquidity in USD
+
+        Returns:
+            List of all eligible markets
+        """
+        return self.fetch_filtered_markets(
+            limit=limit,
+            min_volume=min_volume,
+            min_liquidity=min_liquidity,
+            exclude_only=True,
+        )
 
     def get_market_by_id(self, market_id: int) -> Optional[Market]:
         """Fetch a specific market by ID."""
