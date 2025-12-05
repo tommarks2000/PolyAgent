@@ -2,6 +2,8 @@
 
 Queries multiple LLM providers in parallel to get consensus predictions.
 Inspired by Moon Dev's swarm approach but integrated with our edge-based system.
+
+v3.0 - Added Gemini and XAI (Grok) support for enhanced decision making.
 """
 import os
 import json
@@ -12,12 +14,12 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 
-from config import OPENAI_API_KEY, PERPLEXITY_API_KEY
+from config import OPENAI_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, XAI_API_KEY
 
 
 @dataclass
 class LLMPrediction:
-    """Single model's prediction."""
+    """Single model prediction."""
     model_name: str
     provider: str
     prediction: str  # YES, NO, or SKIP
@@ -112,6 +114,10 @@ LLM_MODELS = {
     "claude_sonnet": (True, "anthropic", "claude-sonnet-4-20250514", "ANTHROPIC_API_KEY"),
     "deepseek": (True, "deepseek", "deepseek-chat", "DEEPSEEK_API_KEY"),
     "perplexity": (True, "perplexity", "sonar", "PERPLEXITY_API_KEY"),
+    # New models for enhanced decision making
+    "gemini_flash": (True, "gemini", "gemini-2.0-flash", "GEMINI_API_KEY"),
+    "gemini_pro": (True, "gemini", "gemini-2.5-pro", "GEMINI_API_KEY"),
+    "grok": (True, "xai", "grok-2-1212", "XAI_API_KEY"),
 }
 
 
@@ -128,6 +134,8 @@ class LLMSwarmClient:
             "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
             "DEEPSEEK_API_KEY": os.getenv("DEEPSEEK_API_KEY", ""),
             "PERPLEXITY_API_KEY": os.getenv("PERPLEXITY_API_KEY", PERPLEXITY_API_KEY),
+            "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", GEMINI_API_KEY),
+            "XAI_API_KEY": os.getenv("XAI_API_KEY", XAI_API_KEY),
         }
 
         # Filter to only enabled models with valid API keys
@@ -174,12 +182,10 @@ INSTRUCTIONS:
 
 RESPOND IN THIS EXACT FORMAT:
 PREDICTION: [YES/NO/SKIP]
-CONFIDENCE: [0.0-1.0]
-REASONING: [One sentence explaining your prediction]
 
 Only respond with YES if you believe the probability should be HIGHER than the current price.
 Only respond with NO if you believe the probability should be LOWER than the current price.
-Respond with SKIP if you're uncertain or the price seems fair.
+Respond with SKIP if you are uncertain or the price seems fair.
 """
         return prompt
 
@@ -279,6 +285,59 @@ Respond with SKIP if you're uncertain or the price seems fair.
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
 
+    def _query_gemini(self, model_id: str, api_key: str, prompt: str) -> str:
+        """Query Google Gemini API."""
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent?key={api_key}"
+
+        response = self.client.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+            },
+            json={
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.3,
+                    "maxOutputTokens": 500,
+                }
+            },
+        )
+        response.raise_for_status()
+        result = response.json()
+
+        # Extract text from Gemini response structure
+        # Handle case where thinking model uses all tokens for reasoning
+        candidate = result["candidates"][0]
+        content = candidate.get("content", {})
+        parts = content.get("parts", [])
+        if parts:
+            return parts[0].get("text", "SKIP")
+        return "PREDICTION: SKIP"
+
+    def _query_xai(self, model_id: str, api_key: str, prompt: str) -> str:
+        """Query XAI (Grok) API - OpenAI compatible."""
+        response = self.client.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model_id,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.3,
+                "max_tokens": 200,
+            },
+        )
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+
     def _query_single_model(
         self,
         model_name: str,
@@ -300,6 +359,10 @@ Respond with SKIP if you're uncertain or the price seems fair.
                 response = self._query_deepseek(model_id, api_key, prompt)
             elif provider == "perplexity":
                 response = self._query_perplexity(model_id, api_key, prompt)
+            elif provider == "gemini":
+                response = self._query_gemini(model_id, api_key, prompt)
+            elif provider == "xai":
+                response = self._query_xai(model_id, api_key, prompt)
             else:
                 raise ValueError(f"Unknown provider: {provider}")
 

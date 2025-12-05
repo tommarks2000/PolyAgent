@@ -1,4 +1,4 @@
-"""Configuration for Polymarket Swarm Trader v2.0."""
+"""Configuration for Polymarket Swarm Trader v3.0."""
 import os
 from dotenv import load_dotenv
 
@@ -14,6 +14,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 NEWSAPI_API_KEY = os.getenv("NEWSAPI_API_KEY", "")
 FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+XAI_API_KEY = os.getenv("XAI_API_KEY", "")
 
 # Tradeable market parameters (CRITICAL: enableOrderBook for actual trading)
 TRADEABLE_MARKET_PARAMS = {
