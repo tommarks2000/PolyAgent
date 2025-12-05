@@ -23,7 +23,7 @@ class LLMPrediction:
     model_name: str
     provider: str
     prediction: str  # YES, NO, or SKIP
-    confidence: float  # 0-1
+    fair_probability: float  # 0-1, model estimate of true probability
     reasoning: str
     response_time: float
     success: bool = True
@@ -49,9 +49,10 @@ class SwarmPrediction:
     # Consensus
     consensus_prediction: str = "SKIP"
     consensus_strength: float = 0.0  # 0-1
-    average_confidence: float = 0.0
+    average_fair_probability: float = 0.5  # Average of model estimates
+    estimated_edge: float = 0.0  # Mispricing vs market
 
-    def calculate_consensus(self):
+    def calculate_consensus(self, current_market_price: float = 0.5):
         """Calculate consensus from individual predictions."""
         self.yes_votes = sum(1 for p in self.predictions if p.prediction == "YES" and p.success)
         self.no_votes = sum(1 for p in self.predictions if p.prediction == "NO" and p.success)
@@ -76,9 +77,10 @@ class SwarmPrediction:
             self.consensus_prediction = "SKIP"
             self.consensus_strength = self.skip_votes / self.total_responses
 
-        # Average confidence
-        confidences = [p.confidence for p in self.predictions if p.success and p.confidence > 0]
-        self.average_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+        # Calculate average fair probability and edge
+        fair_probs = [p.fair_probability for p in self.predictions if p.success]
+        self.average_fair_probability = sum(fair_probs) / len(fair_probs) if fair_probs else 0.5
+        self.estimated_edge = (self.average_fair_probability - current_market_price) * 100
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -176,23 +178,29 @@ CURRENT MARKET PRICE: YES = {current_yes_price:.1%} / NO = {1-current_yes_price:
 
         prompt += """
 INSTRUCTIONS:
-1. Analyze the market question and available context
-2. Consider if the current market price is accurate or mispriced
-3. Provide your prediction
+1. Analyze the market question objectively
+2. Estimate the TRUE probability this event will happen (ignore current market price)
+3. Compare your estimate to market price to find MISPRICING opportunities
 
 RESPOND IN THIS EXACT FORMAT:
+FAIR_PROBABILITY: [your estimate, e.g., 25%]
 PREDICTION: [YES/NO/SKIP]
+REASONING: [one sentence]
 
-Only respond with YES if you believe the probability should be HIGHER than the current price.
-Only respond with NO if you believe the probability should be LOWER than the current price.
-Respond with SKIP if you are uncertain or the price seems fair.
+RULES:
+- YES = your fair probability is HIGHER than market (undervalued, buy YES)
+- NO = your fair probability is LOWER than market (overvalued, buy NO)  
+- SKIP = fair probability is close to market (no edge)
+
+IMPORTANT: We want to find MISPRICED markets. A 5% market where you estimate 20%+ is valuable.
+A 95% market where you estimate 70% is also valuable. Look for disagreements with the market!
 """
         return prompt
 
     def _parse_prediction(self, response: str) -> Tuple[str, float, str]:
-        """Parse model response into prediction, confidence, reasoning."""
+        """Parse model response into prediction, fair_probability, reasoning."""
         prediction = "SKIP"
-        confidence = 0.5
+        fair_probability = 0.5  # Default to 50% if not parsed
         reasoning = ""
 
         lines = response.strip().split("\n")
@@ -200,19 +208,27 @@ Respond with SKIP if you are uncertain or the price seems fair.
             line = line.strip()
             if line.upper().startswith("PREDICTION:"):
                 pred = line.split(":", 1)[1].strip().upper()
-                if pred in ["YES", "NO", "SKIP"]:
-                    prediction = pred
-            elif line.upper().startswith("CONFIDENCE:"):
+                pred = pred.replace("**", "").strip()
+                if "YES" in pred:
+                    prediction = "YES"
+                elif "NO" in pred:
+                    prediction = "NO"
+                elif "SKIP" in pred:
+                    prediction = "SKIP"
+            elif line.upper().startswith("FAIR_PROBABILITY:") or line.upper().startswith("FAIR PROBABILITY:"):
                 try:
-                    conf = float(line.split(":", 1)[1].strip())
-                    confidence = max(0.0, min(1.0, conf))
+                    prob_str = line.split(":", 1)[1].strip()
+                    prob_str = prob_str.replace("%", "").replace("**", "").strip()
+                    prob = float(prob_str)
+                    if prob > 1:
+                        prob = prob / 100
+                    fair_probability = max(0.01, min(0.99, prob))
                 except ValueError:
                     pass
             elif line.upper().startswith("REASONING:"):
                 reasoning = line.split(":", 1)[1].strip()
 
-        return prediction, confidence, reasoning
-
+        return prediction, fair_probability, reasoning
     def _query_openai(self, model_id: str, api_key: str, prompt: str) -> str:
         """Query OpenAI API."""
         response = self.client.post(
@@ -373,7 +389,7 @@ Respond with SKIP if you are uncertain or the price seems fair.
                 model_name=model_name,
                 provider=provider,
                 prediction=prediction,
-                confidence=confidence,
+                fair_probability=confidence,
                 reasoning=reasoning,
                 response_time=time.time() - start_time,
                 success=True,
@@ -384,7 +400,7 @@ Respond with SKIP if you are uncertain or the price seems fair.
                 model_name=model_name,
                 provider=provider,
                 prediction="SKIP",
-                confidence=0.0,
+                fair_probability=0.5,
                 reasoning="",
                 response_time=time.time() - start_time,
                 success=False,
@@ -449,7 +465,7 @@ Respond with SKIP if you are uncertain or the price seems fair.
                         model_name=model_name,
                         provider="unknown",
                         prediction="SKIP",
-                        confidence=0.0,
+                        fair_probability=0.5,
                         reasoning="",
                         response_time=0.0,
                         success=False,
@@ -457,7 +473,7 @@ Respond with SKIP if you are uncertain or the price seems fair.
                     ))
 
         # Calculate consensus
-        swarm.calculate_consensus()
+        swarm.calculate_consensus(current_yes_price)
 
         return swarm
 
