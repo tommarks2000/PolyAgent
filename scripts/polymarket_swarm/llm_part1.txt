@@ -1,0 +1,81 @@
+﻿"""Multi-Model LLM Predictions for Polymarket.
+
+Queries multiple LLM providers in parallel to get consensus predictions.
+Inspired by Moon Dev's swarm approach but integrated with our edge-based system.
+
+v3.0 - Added Gemini and XAI (Grok) support for enhanced decision making.
+"""
+import os
+import json
+import time
+from typing import Dict, List, Optional, Any, Tuple
+from dataclasses import dataclass, field
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import httpx
+
+from config import OPENAI_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, XAI_API_KEY
+
+
+@dataclass
+class LLMPrediction:
+    """Single model prediction."""
+    model_name: str
+    provider: str
+    prediction: str  # YES, NO, or SKIP
+    confidence: float  # 0-1
+    reasoning: str
+    response_time: float
+    success: bool = True
+    error: Optional[str] = None
+
+
+@dataclass
+class SwarmPrediction:
+    """Aggregated prediction from all models."""
+    market_id: str
+    market_question: str
+    timestamp: str
+
+    # Individual predictions
+    predictions: List[LLMPrediction] = field(default_factory=list)
+
+    # Aggregated results
+    yes_votes: int = 0
+    no_votes: int = 0
+    skip_votes: int = 0
+    total_responses: int = 0
+
+    # Consensus
+    consensus_prediction: str = "SKIP"
+    consensus_strength: float = 0.0  # 0-1
+    average_confidence: float = 0.0
+
+    def calculate_consensus(self):
+        """Calculate consensus from individual predictions."""
+        self.yes_votes = sum(1 for p in self.predictions if p.prediction == "YES" and p.success)
+        self.no_votes = sum(1 for p in self.predictions if p.prediction == "NO" and p.success)
+        self.skip_votes = sum(1 for p in self.predictions if p.prediction == "SKIP" and p.success)
+        self.total_responses = sum(1 for p in self.predictions if p.success)
+
+        if self.total_responses == 0:
+            self.consensus_prediction = "SKIP"
+            self.consensus_strength = 0.0
+            return
+
+        # Determine consensus
+        max_votes = max(self.yes_votes, self.no_votes, self.skip_votes)
+
+        if self.yes_votes == max_votes and self.yes_votes > self.no_votes:
+            self.consensus_prediction = "YES"
+            self.consensus_strength = self.yes_votes / self.total_responses
+        elif self.no_votes == max_votes and self.no_votes > self.yes_votes:
+            self.consensus_prediction = "NO"
+            self.consensus_strength = self.no_votes / self.total_responses
+        else:
+            self.consensus_prediction = "SKIP"
+            self.consensus_strength = self.skip_votes / self.total_responses
+
+        # Average confidence
+        confidences = [p.confidence for p in self.predictions if p.success and p.confidence > 0]
+        self.average_confidence = sum(confidences) / len(confidences) if confidences else 0.0

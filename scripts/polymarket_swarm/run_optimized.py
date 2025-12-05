@@ -169,9 +169,9 @@ def main():
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
-    # PHASE 1: Free pre-filter (scan 200 markets)
+    # PHASE 1: Free pre-filter (scan 2000 markets - this is FREE!)
     promising = phase1_prefilter(
-        max_markets=200,      # Scan lots of markets (FREE)
+        max_markets=2000,     # Scan 2000 markets (FREE API calls)
         min_potential=15.0,   # Only pass markets with 15%+ potential score
     )
 

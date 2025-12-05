@@ -258,7 +258,7 @@ class PolymarketClient:
             offset += batch_size
 
             # Safety limit - increased to scan more markets
-            if offset > 2000:
+            if offset > 10000:
                 break
 
         return filtered[:limit]
