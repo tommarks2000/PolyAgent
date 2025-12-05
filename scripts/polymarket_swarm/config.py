@@ -27,10 +27,22 @@ TRADEABLE_MARKET_PARAMS = {
 
 # Filter categories (exclude these)
 EXCLUDED_CATEGORIES = [
+    # Crypto
     "crypto", "cryptocurrency", "bitcoin", "ethereum", "defi", "nft",
-    "sports", "nfl", "nba", "mlb", "soccer", "football", "basketball",
-    "baseball", "hockey", "tennis", "golf", "mma", "ufc", "boxing",
-    "esports", "gaming"
+    "solana", "dogecoin", "xrp", "cardano", "token", "coin",
+    # Sports - leagues
+    "sports", "nfl", "nba", "mlb", "nhl", "mls", "uefa", "fifa",
+    "premier league", "la liga", "serie a", "bundesliga", "ligue 1",
+    "champions league", "world cup", "olympics", "f1", "formula 1",
+    # Sports - types
+    "soccer", "football", "basketball", "baseball", "hockey", "tennis",
+    "golf", "mma", "ufc", "boxing", "cricket", "rugby", "racing",
+    # Sports - terms
+    "championship", "playoff", "super bowl", "world series", "stanley cup",
+    "drivers champion", "win the 202", "win on 202", "beat the", "defeat",
+    "end in a draw", " vs. ", " fc ", " sk ", " afc",
+    # Gaming
+    "esports", "gaming", "league of legends", "dota", "csgo",
 ]
 
 # Target categories (prioritize these)

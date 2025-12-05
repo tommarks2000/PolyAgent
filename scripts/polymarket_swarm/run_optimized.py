@@ -54,36 +54,35 @@ def phase1_prefilter(max_markets: int = 200, min_potential: float = 5.0):
         potential = 0.0
         reasons = []
 
-        # SWEET SPOT: Prices 3-20% or 80-97% have upside potential
-        # (Very extreme 0-2% or 98-100% are usually correctly priced)
-        if 0.03 <= yes_price <= 0.20:
-            potential += 15
-            reasons.append(f"low ({yes_price:.0%})")
-        elif 0.80 <= yes_price <= 0.97:
-            potential += 15
-            reasons.append(f"high ({yes_price:.0%})")
+        # FOCUS ON MID-RANGE PRICES (15-85%) - where mispricing is possible
+        # Extreme prices (0-10%, 90-100%) are usually correctly priced
+        if 0.15 <= yes_price <= 0.85:
+            # Sweet spot: 25-75% has most uncertainty
+            if 0.25 <= yes_price <= 0.75:
+                potential += 20
+                reasons.append(f"uncertain ({yes_price:.0%})")
+            else:
+                potential += 10
+                reasons.append(f"mid ({yes_price:.0%})")
 
-        # MID-RANGE with good liquidity = tradeable opportunities
-        if 0.25 <= yes_price <= 0.75:
-            if liquidity > 20000:
-                potential += 12
-                reasons.append(f"liquid mid ({yes_price:.0%})")
-            elif liquidity > 10000:
-                potential += 8
-                reasons.append(f"mid-range ({yes_price:.0%})")
+        # SKIP extreme prices - they're usually right
+        elif yes_price < 0.10 or yes_price > 0.90:
+            continue  # Skip these entirely
 
-        # HIGH VOLUME relative to liquidity = active price discovery
-        if liquidity > 0 and volume / liquidity > 15:
-            potential += 8
-            reasons.append("very active")
-        elif liquidity > 0 and volume / liquidity > 8:
-            potential += 4
-            reasons.append("active")
-
-        # GOOD LIQUIDITY bonus (makes trades executable)
-        if liquidity > 50000:
-            potential += 5
+        # GOOD LIQUIDITY required (must be tradeable)
+        if liquidity < 5000:
+            continue  # Skip illiquid markets
+        elif liquidity > 50000:
+            potential += 10
             reasons.append("high liq")
+        elif liquidity > 20000:
+            potential += 5
+            reasons.append("good liq")
+
+        # HIGH VOLUME = active market with price discovery
+        if liquidity > 0 and volume / liquidity > 10:
+            potential += 10
+            reasons.append("active")
 
         if potential >= min_potential:
             promising.append((market, potential, reasons))
@@ -173,7 +172,7 @@ def main():
     # PHASE 1: Free pre-filter (scan 2000 markets - this is FREE!)
     promising = phase1_prefilter(
         max_markets=2000,     # Scan 2000 markets (FREE API calls)
-        min_potential=28.0,   # Strict threshold: only highest potential markets
+        min_potential=25.0,   # Strict threshold: only highest potential markets
     )
 
     if not promising:
