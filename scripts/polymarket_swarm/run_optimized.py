@@ -39,6 +39,7 @@ def phase1_prefilter(max_markets: int = 200, min_potential: float = 5.0):
     )
 
     print(f"Fetched {len(markets)} markets from Polymarket")
+    print(f"(Excluding: crypto, sports, esports, gaming)")
     print(f"Minimum potential edge to pass: {min_potential}%")
     print()
 
@@ -172,17 +173,29 @@ def main():
     # PHASE 1: Free pre-filter (scan 2000 markets - this is FREE!)
     promising = phase1_prefilter(
         max_markets=2000,     # Scan 2000 markets (FREE API calls)
-        min_potential=15.0,   # Only pass markets with 15%+ potential score
+        min_potential=28.0,   # Strict threshold: only highest potential markets
     )
 
     if not promising:
         print("\nNo promising markets found. Exiting.")
         return
 
-    # Ask user before spending on LLM calls
+    # Limit to top N to control API costs
+    MAX_PHASE2_MARKETS = 50  # Analyze top 50 only = ~150 API calls
+
+    if len(promising) > MAX_PHASE2_MARKETS:
+        print()
+        print(f"Found {len(promising)} promising markets.")
+        print(f"Limiting to TOP {MAX_PHASE2_MARKETS} (sorted by potential score)")
+        promising = promising[:MAX_PHASE2_MARKETS]
+
+    # Calculate API calls (3 models active: gemini_flash, gemini_pro, grok)
+    num_models = 3
+    api_calls = len(promising) * num_models
+
     print()
-    print(f"Found {len(promising)} promising markets.")
-    print(f"Phase 2 will use ~{len(promising) * 6} LLM API calls.")
+    print(f"Phase 2 will analyze {len(promising)} markets")
+    print(f"Estimated API calls: ~{api_calls} ({num_models} models)")
 
     proceed = input("\nProceed with Phase 2 deep analysis? [Y/n]: ").strip().lower()
     if proceed == 'n':
@@ -192,7 +205,7 @@ def main():
     # PHASE 2: Paid deep analysis
     opportunities = phase2_deep_analysis(
         promising,
-        min_edge=8.0,         # Final edge threshold
+        min_edge=10.0,        # Higher edge threshold for quality
         min_confidence=0.6,   # Final confidence threshold
     )
 
